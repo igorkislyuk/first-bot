@@ -2,6 +2,7 @@
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
@@ -22,11 +23,39 @@ namespace FirstBot
             if (activity.Type == ActivityTypes.Message)
             {
                 ConnectorClient connector = new ConnectorClient(new Uri(activity.ServiceUrl));
-                // calculate something for us to return
-                int length = (activity.Text ?? string.Empty).Length;
+                Activity reply;
 
-                // return our reply to the user
-                Activity reply = activity.CreateReply($"You sent {activity.Text} which was {length} characters");
+                switch (activity.Text)
+                {
+                    case "list":
+
+                        using (var db = new SchoolEntities())
+                        {
+                            var firstNames = db.People.Select(p => p.FirstName);
+
+                            //create message
+                            var sb = new StringBuilder();
+                            foreach (var name in firstNames)
+                            {
+                                sb.Append(name + "\n");
+                            }
+
+                            var resultMessage = sb.ToString();
+                            reply = activity.CreateReply(resultMessage);
+                        }
+
+                        break;
+                    default:
+
+                        // calculate something for us to return
+                        int length = (activity.Text ?? string.Empty).Length;
+
+                        // return our reply to the user
+                        reply = activity.CreateReply($"You sent {activity.Text} which was {length} characters");
+
+                        break;
+                }
+                
                 await connector.Conversations.ReplyToActivityAsync(reply);
             }
             else
