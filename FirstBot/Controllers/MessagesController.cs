@@ -1,8 +1,10 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
@@ -23,39 +25,9 @@ namespace FirstBot
             if (activity.Type == ActivityTypes.Message)
             {
                 ConnectorClient connector = new ConnectorClient(new Uri(activity.ServiceUrl));
-                Activity reply;
 
-                switch (activity.Text)
-                {
-                    case "list":
+                Activity reply = ExecuteCommandWith(activity);
 
-                        using (var db = new SchoolEntities())
-                        {
-                            var firstNames = db.People.Select(p => p.FirstName);
-
-                            //create message
-                            var sb = new StringBuilder();
-                            foreach (var name in firstNames)
-                            {
-                                sb.Append(name + "\n");
-                            }
-
-                            var resultMessage = sb.ToString();
-                            reply = activity.CreateReply(resultMessage);
-                        }
-
-                        break;
-                    default:
-
-                        // calculate something for us to return
-                        int length = (activity.Text ?? string.Empty).Length;
-
-                        // return our reply to the user
-                        reply = activity.CreateReply($"You sent {activity.Text} which was {length} characters");
-
-                        break;
-                }
-                
                 await connector.Conversations.ReplyToActivityAsync(reply);
             }
             else
@@ -93,6 +65,73 @@ namespace FirstBot
             }
 
             return null;
+        }
+
+        private Activity ExecuteCommandWith(Activity activity)
+        {
+            Activity reply = DefaultReplyTo(activity);
+
+            var commands = activity.Text.Trim().Split(' ').ToArray();
+            if (commands.First().Equals("list"))
+            {
+                //return list
+                using (var db = new SchoolEntities())
+                {
+                    var firstNames = db.People.Select(p => p.FirstName);
+
+                    //create message
+                    var sb = new StringBuilder();
+                    foreach (var name in firstNames)
+                    {
+                        sb.Append(name + "\n");
+                    }
+
+                    var resultMessage = sb.ToString();
+                    reply = activity.CreateReply(resultMessage);
+                }
+            }
+            else if (commands.First().Equals("rm"))
+            {
+                if (commands.Length != 2)
+                {
+                    return DefaultReplyTo(activity);
+                }
+
+                var name = commands[1];
+                reply = activity.CreateReply($"You are going delete {name}");
+
+                var closureActivity = activity;
+                var deleteThread = new Thread(() =>
+                {
+                    //remove command
+                    using (var db = new SchoolEntities())
+                    {
+                        Person personToDelete = db.People.First(person => person.FirstName == name);
+
+                        db.People.Remove(personToDelete);
+                        db.SaveChanges();
+
+                        var connector = new ConnectorClient(new Uri(activity.ServiceUrl));
+                        var confirmActivity = activity.CreateReply($"You are delete {name}");
+
+                        connector.Conversations.ReplyToActivityAsync(confirmActivity);
+                    }
+                });
+
+                deleteThread.Start();
+                deleteThread.Join();
+            }
+
+            return reply;
+        }
+
+        private Activity DefaultReplyTo(Activity activity)
+        {
+            // calculate something for us to return
+            int length = (activity.Text ?? string.Empty).Length;
+
+            // return our reply to the user
+            return activity.CreateReply($"You sent {activity.Text} which was {length} characters");
         }
     }
 }
